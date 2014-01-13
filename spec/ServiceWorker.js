@@ -8,7 +8,12 @@ module.exports = ServiceWorker;
 function ServiceWorker(workerUrl) {
     this._eventListeners = [];
     this.version = 0;
+
+    // TODO: replace this with a constructor param.
+    // Something like _CacheLists should store a CacheList per origin
     this.caches = new CacheList();
+
+    // TODO: work out why this is needed, hopefully remove
     this.caches.origin = workerUrl.origin;
     this.importScripts = importScripts(workerUrl);
 }

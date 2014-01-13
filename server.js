@@ -41,7 +41,6 @@ var Request = require('./spec/Request');
 var Map = require('./spec/Map');
 var AsyncMap = require('./spec/AsyncMap');
 var CacheList = require('./spec/CacheList');
-var CacheItemList = require('./spec/CacheItemList');
 var Cache = require('./spec/Cache');
 
 var Event = require('./spec/Event');
@@ -225,6 +224,7 @@ function registerServiceWorker(origin, glob, rawGlob, workerUrl) {
 
     console.log(chalk.green('Registering: ') + '%s for %s.', workerUrl.toString(), glob.toString());
 
+    
     return loadWorker(workerUrl)
         // Compare the worker file to the existing, loaded workers
         .then(function (workerFile) {
@@ -247,6 +247,7 @@ function registerServiceWorker(origin, glob, rawGlob, workerUrl) {
             }
 
             // We're all good, so setup (execute) the worker
+            // *****EVERYTHING ABOVE IS IN WORKERRESITRATION
             return setupWorker(workerFile, workerUrl, glob, rawGlob, origin);
         })
         // We have an executed worker, so now install it
