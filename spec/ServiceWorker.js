@@ -1,6 +1,5 @@
 var hide = require('hide-key');
 var CacheList = require('../spec/CacheList');
-var importScripts = require('../spec/importScripts');
 var chalk = require('chalk');
 
 module.exports = ServiceWorker;
@@ -15,7 +14,9 @@ function ServiceWorker(workerUrl) {
 
     // TODO: work out why this is needed, hopefully remove
     this.caches.origin = workerUrl.origin;
-    this.importScripts = importScripts(workerUrl);
+
+    // importScripts requires execution context info, so it's handled in _Worker.js
+    // this.importScripts = ...
 }
 
 /**

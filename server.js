@@ -164,209 +164,25 @@ function handleWebSocket(socket) {
     // Listen up!
     socket.on('message', function (message) {
         // TODO guard this
+        var data;
+
         try {
-            var data = JSON.parse(message);
+            data = JSON.parse(message);
         } catch (e) {
             return logError(e);
         }
 
         if (data.type === 'register') {
-            registerServiceWorker.apply(null, data.data.args);
+            workerRegistry.register.apply(workerRegistry, data.data.args);
+            return;
         }
-
+        
         if (data.type === 'postMessage') {
-            return workerRegistry.postMessageWorker.apply(workerRegistry, data.data.args);
+            workerRegistry.postMessageWorker.apply(workerRegistry, data.data.args);
+            return;
         }
     });
     socket.on('close', function (message) {});
-}
-
-/**
- * Utils
- */
-
-/**
- * Handles navigator.registerServiceWorker(...)
- */
-function registerServiceWorker(origin, glob, rawGlob, workerUrl) {
-    // Trailing stars are pointless
-    glob = glob.replace(/\*$/, '');
-
-    origin = new URL(origin);
-    glob = new URL(glob);
-    workerUrl = new URL(workerUrl);
-
-    // Don't allow workers to register for cross-protocol globs
-    if (glob.protocol !== origin.protocol) {
-        console.log(chalk.red('Registration rejected: glob and origin protocols do not match.'));
-        return Promise.reject();
-    }
-
-    // Don't allow cross-protocol workers
-    if (origin.protocol !== workerUrl.protocol) {
-        console.log(chalk.red('Registration rejected: worker and origin protocols do not match.'));
-        return Promise.reject();
-    }
-
-    // Don't allow workers to register for origins they don't own
-    if (glob.host.indexOf(origin.host) !== 0) {
-        console.log(chalk.red('Registration rejected: worker trying to register for an origin it does not own.'));
-        console.log('%s for origin %s', glob.toString(), origin.toString());
-        return Promise.reject();
-    }
-
-    // Don't allow cross-origin workers
-    if (origin.host.indexOf(workerUrl.host) !== 0) {
-        console.log(chalk.red('Registration rejected: cross-origin worker not allowed.'));
-        console.log('%s for origin %s', glob.toString(), origin.toString());
-        return Promise.reject();
-    }
-
-    console.log(chalk.green('Registering: ') + '%s for %s.', workerUrl.toString(), glob.toString());
-
-    
-    return loadWorker(workerUrl)
-        // Compare the worker file to the existing, loaded workers
-        .then(function (workerFile) {
-            var workerRegistration = workerRegistry.getRegistrationFromUrl(workerUrl);
-
-            if (workerRegistration) {
-                // Identical to installed worker?
-                if (workerRegistration.hasInstalledWorker() &&
-                    _WorkerRegistry.identicalWorker(workerRegistration.installed, workerFile)) {
-                    console.log(chalk.red('Ignoring new worker – identical to installed worker.'));
-                    return Promise.reject();
-                }
-
-                // Identical to active worker?
-                if (workerRegistration.hasActiveWorker &&
-                    _WorkerRegistry.identicalWorker(workerRegistration.active, workerFile)) {
-                    console.log(chalk.red('Ignoring new worker – identical to active worker.'));
-                    return Promise.reject();
-                }
-            }
-
-            // We're all good, so setup (execute) the worker
-            // *****EVERYTHING ABOVE IS IN WORKERRESITRATION
-            return setupWorker(workerFile, workerUrl, glob, rawGlob, origin);
-        })
-        // We have an executed worker, so now install it
-        .then(function (workerData) {
-            var workerRegistration = workerRegistry.getOrCreateRegistration(workerUrl, glob);
-            return installWorker(workerData.worker).then(function () {
-                workerRegistration.installed = workerData;
-                return workerRegistration;
-            });
-        })
-        .catch(logError);
-}
-
-/**
- * Load the worker file across the network
- */
-function loadWorker(workerUrl) {
-    // Load and compare worker files
-    return fetch(workerUrl).then(function (response) {
-        return response.body.toString();
-    });
-}
-
-/**
- * Eval the worker in a new ServiceWorker context with all the trimmings, via new Function.
- */
-function setupWorker(workerFile, workerUrl, glob, rawGlob, origin) {
-    var worker = new ServiceWorker(workerUrl, glob, rawGlob, origin);
-    var importer = importScripts(workerUrl);
-    var expandedWorkerBody = expandWorkerFile(workerFile);
-
-    // The vm stuff involves some hackery
-    // http://nodejs.org/api/vm.html#vm_sandboxes
-    // This recovers from:
-    // a) The lack of prototype use
-    // b) The loss of 'this' context
-    for (var key in worker) {
-        if (worker.hasOwnProperty(key)) continue;
-
-        if (worker[key].bind) {
-            worker[key] = worker[key].bind(worker);
-        }
-        else {
-            worker[key] = worker[key];
-        }
-    }
-
-    vm.runInNewContext(expandedWorkerBody, worker, workerUrl);
-
-    // Now the worker has been setup. Don't allow importScripts to be called again.
-    worker.importScripts.disable();
-
-    return {
-        worker: worker,
-        file: workerFile
-    };
-}
-
-function expandWorkerFile(workerBody) {
-    var expandedWorkerBody = falafel(workerBody, function(node) {
-        if (astUtils.isCallTo(node, 'importScripts')) {
-            // TODO: Ensure this is only called in initial execution context, ie. not in event handler.
-            node.update('eval(' + node.source() + ')');
-        }
-    });
-    return expandedWorkerBody;
-}
-
-/**
- * Install the worker by firing an InstallEvent on it. The event constructor is passed the callbacks
- * for the promise so it can resolve or reject it.
- *
- * TODO: can this fulfillment pattern be abstracted?
-         answer: yes, make the promise inside PromiseEvent and add methods
-         to force resolve/reject. Or something.
- */
-function installWorker(worker) {
-    console.log('Installing...');
-    var installPromise = new Promise(function (resolve, reject) {
-        // Install it!
-        var installEvent = new InstallEvent(resolve, reject);
-        worker.dispatchEvent(installEvent);
-        // If waitUntil was not called, we can assume things went swell.
-        // TODO should we prevent waitUtil being called now?
-        if (!installEvent._isStopped()) {
-            return resolve();
-        }
-    });
-    // How'd we do?
-    installPromise.then(function () {
-        console.log(chalk.green('Installed worker version:'), chalk.yellow(worker.version));
-    }, function () {
-        console.log(chalk.red('Install failed for worker version:'), chalk.yellow(worker.version));
-    });
-    return installPromise;
-}
-
-/**
- * Activate the worker.
- * This occurs at the time of the first navigation after the worker was installed.
- * TODO this function and the install are very similar. Can they be abstracted?
- */
-function activateWorker(worker) {
-    console.log('Activating...');
-    var activatePromise = new Promise(function (resolve, reject) {
-        // Activate it
-        var activateEvent = new ActivateEvent(resolve, reject);
-        worker.dispatchEvent(activateEvent);
-        if (!activateEvent._isStopped()) {
-            return resolve();
-        }
-    });
-    // How'd we do?
-    activatePromise.then(function () {
-        console.log(chalk.green('Activated worker version:'), chalk.yellow(worker.version));
-    }, function () {
-        console.log(chalk.red('Activation failed for worker version:'), chalk.yellow(worker.version));
-    });
-    return activatePromise;
 }
 
 /**
