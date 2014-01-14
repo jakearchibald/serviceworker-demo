@@ -49,14 +49,6 @@ var FetchEvent = require('./spec/FetchEvent');
 var ActivateEvent = require('./spec/ActivateEvent');
 var MessageEvent = require('./spec/MessageEvent');
 
-var fakeConsole = Object.getOwnPropertyNames(console).reduce(function (memo, method) {
-    memo[method] = console[method];
-    if (typeof console[method] === "function") {
-        memo[method] = memo[method].bind(console, chalk.blue('sw:'));
-    }
-    return memo;
-}, {});
-
 /**
  * Worker data
  */
